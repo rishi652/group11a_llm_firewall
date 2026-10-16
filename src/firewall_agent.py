@@ -108,57 +108,118 @@ def run_firewall_agent(prompt):
     Selects a cybersecurity tool, executes it,
     interprets the returned result, and produces
     a structured firewall response.
+
+    Security policy:
+    - RULE_SCAN may immediately BLOCK obvious attacks.
+    - RULE_SCAN may return REVIEW for suspicious requests.
+    - RULE_SCAN is not trusted to make the final ALLOW decision.
+      Any RULE_SCAN ALLOW result is escalated to
+      FULL_SECURITY_ANALYSIS before the request is allowed.
     """
 
     selected_tool = select_tool(prompt)
 
+    # -------------------------------------------------
+    # TOOL 1: RULE_SCAN
+    # -------------------------------------------------
+
     if selected_tool == "RULE_SCAN":
 
-        tool_result = classify_prompt(prompt)
+        rule_scan_result = classify_prompt(prompt)
 
-        final_result = {
-            "selected_tool": selected_tool,
-            "tool_result": tool_result,
-            "category": tool_result["category"],
-            "risk_level": tool_result["risk_level"],
-            "decision": tool_result["decision"],
-            "reason": tool_result["reason"]
-        }
+        # Obvious malicious request:
+        # Rule scanner may immediately block it.
+        if rule_scan_result["decision"] == "BLOCK":
+
+            return {
+                "selected_tool": "RULE_SCAN",
+                "tool_result": rule_scan_result,
+                "category": rule_scan_result["category"],
+                "risk_level": rule_scan_result["risk_level"],
+                "decision": rule_scan_result["decision"],
+                "reason": rule_scan_result["reason"]
+            }
+
+        # Suspicious request:
+        # Keep it for human review.
+        if rule_scan_result["decision"] == "REVIEW":
+
+            return {
+                "selected_tool": "RULE_SCAN",
+                "tool_result": rule_scan_result,
+                "category": rule_scan_result["category"],
+                "risk_level": rule_scan_result["risk_level"],
+                "decision": rule_scan_result["decision"],
+                "reason": rule_scan_result["reason"]
+            }
+
+        # IMPORTANT SECURITY ESCALATION:
+        # RULE_SCAN is not allowed to make the final ALLOW decision.
+        # A benign rule result is sent to the stronger hybrid analysis.
+
+        selected_tool = "FULL_SECURITY_ANALYSIS"
+
+    # -------------------------------------------------
+    # TOOL 2: FULL_SECURITY_ANALYSIS
+    # -------------------------------------------------
+
+    tool_result = analyze_risk(prompt)
+
+    rule_result = tool_result["rule_result"]
+    llm_result = tool_result["semantic_result"]
+
+    # -------------------------------------------------
+    # INTERPRET FINAL BLOCK DECISION
+    # -------------------------------------------------
+
+    if tool_result["final_decision"] == "BLOCK":
+
+        if llm_result["risk_level"] == "HIGH":
+            category = llm_result["category"]
+            reason = llm_result["reason"]
+
+        else:
+            category = rule_result["category"]
+            reason = rule_result["reason"]
+
+    # -------------------------------------------------
+    # INTERPRET FINAL REVIEW DECISION
+    # -------------------------------------------------
+
+    elif tool_result["final_decision"] == "REVIEW":
+
+        if llm_result["risk_level"] == "MEDIUM":
+            category = llm_result["category"]
+            reason = llm_result["reason"]
+
+        else:
+            category = rule_result["category"]
+            reason = rule_result["reason"]
+
+    # -------------------------------------------------
+    # FINAL ALLOW
+    # -------------------------------------------------
 
     else:
 
-        tool_result = analyze_risk(prompt)
+        category = "BENIGN"
 
-        rule_result = tool_result["rule_result"]
-        llm_result = tool_result["semantic_result"]
+        reason = (
+            "The request passed the full security analysis "
+            "and no significant security risk was detected."
+        )
 
-        if tool_result["final_decision"] == "BLOCK":
-            if llm_result["risk_level"] == "HIGH":
-                category = llm_result["category"]
-                reason = llm_result["reason"]
-            else:
-                category = rule_result["category"]
-                reason = rule_result["reason"]
+    # -------------------------------------------------
+    # STRUCTURED AGENT RESPONSE
+    # -------------------------------------------------
 
-        elif tool_result["final_decision"] == "REVIEW":
-            if llm_result["risk_level"] == "MEDIUM":
-                category = llm_result["category"]
-                reason = llm_result["reason"]
-            else:
-                category = rule_result["category"]
-                reason = rule_result["reason"]
-
-        else:
-            category = "BENIGN"
-            reason = "Both analysis components found no significant security risk."
-
-        final_result = {
-            "selected_tool": selected_tool,
-            "tool_result": tool_result,
-            "category": category,
-            "risk_level": tool_result["final_risk"],
-            "decision": tool_result["final_decision"],
-            "reason": reason
-        }
+    final_result = {
+        "selected_tool": "FULL_SECURITY_ANALYSIS",
+        "tool_result": tool_result,
+        "category": category,
+        "risk_level": tool_result["final_risk"],
+        "decision": tool_result["final_decision"],
+        "reason": reason
+    }
 
     return final_result

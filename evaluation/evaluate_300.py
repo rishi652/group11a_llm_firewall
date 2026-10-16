@@ -9,15 +9,14 @@ from sklearn.metrics import (
     classification_report
 )
 
-from src.risk_engine import analyze_risk
-
+from src.firewall_agent import run_firewall_agent
 
 # -----------------------------------------
 # LOAD DATASET
 # -----------------------------------------
 
 df = pd.read_csv(
-    "data/prompts_300_clean.csv"
+    "data/prompts_300_v2_clean.csv"
 )
 
 
@@ -37,10 +36,10 @@ for index, row in df.iterrows():
         row["expected_decision"]
     )
 
-    result = analyze_risk(prompt)
+    result = run_firewall_agent(prompt)
 
     predicted_decision = (
-        result["final_decision"]
+        result["decision"]
     )
 
     expected.append(
